@@ -42,7 +42,8 @@ void FeatureTracker::setMask()
 
     // prefer to keep features that are tracked for long time
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
-
+cout << "cnt_pts_id.size" << cnt_pts_id.size() << endl;
+//cout << "cnt_pts_id" << cnt_pts_id[0] << endl;
     for (unsigned int i = 0; i < forw_pts.size(); i++)
         cnt_pts_id.push_back(make_pair(track_cnt[i], make_pair(forw_pts[i], ids[i])));
 
@@ -100,7 +101,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
     {
         forw_img = img;
     }
-
+cout << "pts.size" <<forw_pts.size()<< endl;
     forw_pts.clear();
 
     if (cur_pts.size() > 0)
@@ -127,7 +128,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
 
         for (auto &n : track_cnt)
             n++;
-
+cout << "track_cnt" << track_cnt.size() << endl;
      //   ROS_DEBUG("set mask begins");
         TicToc t_m;
         setMask();
@@ -144,7 +145,12 @@ void FeatureTracker::readImage(const cv::Mat &_img)
                 cout << "mask type wrong " << endl;
             if (mask.size() != forw_img.size())
                 cout << "wrong size " << endl;
+            //goodFeaturesToTrack(8位或32位浮点型输入图像，单通道,检测出的角点,角点数目最大值，如果实际检测的角点
+            //超过此值，则只返回前maxCorners个强角点,角点的品质因子,对于初选出的角点而言，如果在其周围minDistance
+            //范围内存在其他更强角点，则将此角点删除,指定感兴趣区，如不需在整幅图上寻找角点，则用此参数指定ROI)
             cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.1, MIN_DIST, mask);
+            cout << "forw_pts.size()" << forw_pts.size() << endl;
+            cout << "MAX_CNT" << MAX_CNT << endl;
         }
         else
             n_pts.clear();
@@ -152,7 +158,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
 
       //  ROS_DEBUG("add feature begins");
         TicToc t_a;
-        addPoints();
+        addPoints(); //！Step6：将选取的强角点加入到tracking的Featues中
      //   ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
 
         prev_img = forw_img;
@@ -161,12 +167,15 @@ void FeatureTracker::readImage(const cv::Mat &_img)
     cur_img = forw_img;
     cur_pts = forw_pts;
 }
-
+/**
+ * @breif 通过前后两帧的追踪计算F矩阵，通过F矩阵去除Outliers
+*/
 void FeatureTracker::rejectWithF()
 {
     if (forw_pts.size() >= 8)
     {
        // ROS_DEBUG("FM ransac begins");
+        cout << "rejectWithF " << endl;
         TicToc t_f;
         vector<cv::Point2f> un_prev_pts(prev_pts.size()), un_forw_pts(forw_pts.size());
         for (unsigned int i = 0; i < prev_pts.size(); i++)
@@ -198,6 +207,7 @@ void FeatureTracker::rejectWithF()
 
 bool FeatureTracker::updateID(unsigned int i)
 {
+    cout << "id.size" << ids.size() << endl;
     if (i < ids.size())
     {
         if (ids[i] == -1)

@@ -224,12 +224,15 @@ void visualization()
 	//exit(1);
 }
 
-
+//对单次的IMU测量值做积分得到位移和姿态(a,w,q,p,v)
 void predict(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     double t = imu_msg->header.stamp.toSec();
+    cout << "t " << t << endl;
+    cout << "latest_time" << latest_time << endl;
     double dt = t - latest_time;
     latest_time = t;
+    cout << "dt" << dt << endl;
 
     double dx = imu_msg->linear_acceleration.x;
     double dy = imu_msg->linear_acceleration.y;
@@ -241,18 +244,49 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     double rz = imu_msg->angular_velocity.z;
     Eigen::Vector3d angular_velocity{rx, ry, rz};
 
+    //*****get last at
+    //am=R(at+g)+ba+na
+    //at=q(am-ba-q.inverse*g)得到真实加速度值（imubody坐标系下）
+    //! 这个地方的tmp_Q是local-->world
+    cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
+    cout <<"ba"<< tmp_Ba <<endl;
+    cout <<"acc0" <<acc_0<<endl;
+    cout << "gyr_0"<<gyr_0<<endl;
+    cout << "g"<<estimator.g<< endl;
     Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba - tmp_Q.inverse() * estimator.g);
+    cout << "un_acc_0" <<un_acc_0 << endl;
 
+    //*****get required  wt(wt')
+    //wm=wt+bw+nw
+    //wt'=0.5(wk+w[k+1])-bw（imubody坐标系下）last wm,wm now取平均
+    cout << "bg" <<tmp_Bg << endl;
     Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;
+    cout <<"un_gyr"<< un_gyr<<endl;
+
+    //*****updata q
+    //q=q*q{wt*dt}
     tmp_Q = tmp_Q * Utility::deltaQ(un_gyr * dt);
+    cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
 
+    //*****get at now
     Eigen::Vector3d un_acc_1 = tmp_Q * (linear_acceleration - tmp_Ba - tmp_Q.inverse() * estimator.g);
+    //cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
+    cout << "un_acc_1" <<un_acc_1 << endl;
 
+    //*****get required  at(at')
+    //at'=0.5(atk+atk+1)
     Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
+    cout << "un_acc" <<un_acc << endl;
 
+    //*****get pnow=last p+ v*dt+ 0.5at'(dt*dt)
+    cout << "tmp_P" <<tmp_P << endl;
+    cout << "tmp_V" <<tmp_V << endl;
     tmp_P = tmp_P + dt * tmp_V + 0.5 * dt * dt * un_acc;
+    cout << "tmp_P" <<tmp_P << endl;
     tmp_V = tmp_V + dt * un_acc;
+    cout << "tmp_V" <<tmp_V << endl;
 
+    //当前时刻的w，a赋值为last w，last a
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
 }
@@ -315,10 +349,12 @@ getMeasurements()
     return measurements;
 }
 
+//来一个imu数据，就把它放到buf（queue）里，然后对它predict（此次测量值）做积分得到位移和姿态
 void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     m_buf.lock();
     imu_buf.push(imu_msg);
+    cout <<"imu_buf.size" << imu_buf.size() << endl;
    // ROS_INFO("----------IMU DATA. timestamp %f------------",imu_msg->header.stamp.toSec());
     m_buf.unlock();
   //  con.notify_one();   //remove by solomon
@@ -334,6 +370,7 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
     }
 }
 
+//feature_msg（un_pts）放入feature_buf中
 void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 {
     m_buf.lock();
@@ -346,6 +383,7 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 
 void send_imu(const sensor_msgs::ImuConstPtr &imu_msg)
 {
+    cout << "imu.size" << imu_msg << endl;
     double t = imu_msg->header.stamp.toSec();
     if (current_time < 0)
         current_time = t;
@@ -370,6 +408,7 @@ void send_imu(const sensor_msgs::ImuConstPtr &imu_msg)
 //thread:loop detection
 void process_loop_detection()
 {
+    cout << "void process_loop_detection()" << endl;
     if(loop_closure == NULL)
     {
         const char *voc_file = VOC_FILE.c_str();
@@ -385,6 +424,7 @@ void process_loop_detection()
 
     while(LOOP_CLOSURE)   
     {
+        cout << "process_loop_detection-LOOP_CLOSURE" << LOOP_CLOSURE << endl;
         KeyFrame* cur_kf = NULL; 
         m_keyframe_buf.lock();
         while(!keyframe_buf.empty())
@@ -561,6 +601,7 @@ void process_loop_detection()
 //thread: pose_graph optimization
 void process_pose_graph()
 {
+    cout << "void process_pose_graph()" << endl;
     while(true)            
     {
         m_posegraph_buf.lock();
@@ -602,20 +643,26 @@ void process_pose_graph()
 // thread: visual-inertial odometry
 void process()
 {
+    cout << "void process()" << endl;
     while (true) 
     {
+cout << "true" << endl;
         std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>> measurements;
         std::unique_lock<std::mutex> lk(m_buf);
         con.wait(lk, [&]
                  {
+           cout << "con.wait(condition_variable" << endl;
             return (measurements = getMeasurements()).size() != 0;
                  });
         lk.unlock();
-
+ cout << "measurements.size" << measurements.size()<< endl;
         for (auto &measurement : measurements)
         {
             for (auto &imu_msg : measurement.first)
+      //t,dt,ba=bg=000,dx, dy, dz()rx, ry, rz(减去了babg),processIMU(dt, Vector3d(dx, dy, dz()), Vector3d(rx, ry, rz));
+                       //
                 send_imu(imu_msg);
+cout << "send_imu()" <<  imu_buf.size()<< endl;
 
             auto img_msg = measurement.second;
       //      ROS_DEBUG("processing vision data with stamp %f \n", img_msg->header.stamp.toSec());
@@ -748,6 +795,7 @@ void img_callback(const cv::Mat &show_img, const ros::Time &timestamp)
     {
         i_buf.lock();
         image_buf.push(make_pair(show_img, timestamp.toSec()));
+        cout << "image_buf.size" << image_buf.size() << endl;
         i_buf.unlock();
     }
     if(first_image_flag)
@@ -757,7 +805,10 @@ void img_callback(const cv::Mat &show_img, const ros::Time &timestamp)
     }
 
     // frequency control
-    if (round(1.0 * pub_count / (timestamp.toSec() - first_image_time)) <= FREQ)
+    double cao = round(1.0 * pub_count / (timestamp.toSec() - first_image_time));
+    cout << "cao" <<cao<< endl;
+    cout << "FREQ" << FREQ << endl;
+    if (round(1.0 * pub_count / (timestamp.toSec() - first_image_time)) <= FREQ)//
     {
         PUB_THIS_FRAME = true;
         // reset the frequency control
@@ -797,52 +848,52 @@ void img_callback(const cv::Mat &show_img, const ros::Time &timestamp)
 #endif
     }
 
-    if ( PUB_THIS_FRAME && STEREO_TRACK && trackerData[0].cur_pts.size() > 0)
-    {
-        pub_count++;
-        r_status.clear();
-        r_err.clear();
-        TicToc t_o;
-        cv::calcOpticalFlowPyrLK(trackerData[0].cur_img, trackerData[1].cur_img, trackerData[0].cur_pts, trackerData[1].cur_pts, r_status, r_err, cv::Size(21, 21), 3);
-   //     ROS_DEBUG("spatial optical flow costs: %fms", t_o.toc());
-        vector<cv::Point2f> ll, rr;
-        vector<int> idx;
-        for (unsigned int i = 0; i < r_status.size(); i++)
-        {
-            if (!inBorder(trackerData[1].cur_pts[i]))
-                r_status[i] = 0;
+//    if ( PUB_THIS_FRAME && STEREO_TRACK && trackerData[0].cur_pts.size() > 0)
+//    {
+//        pub_count++;
+//        r_status.clear();
+//        r_err.clear();
+//        TicToc t_o;
+//        cv::calcOpticalFlowPyrLK(trackerData[0].cur_img, trackerData[1].cur_img, trackerData[0].cur_pts, trackerData[1].cur_pts, r_status, r_err, cv::Size(21, 21), 3);
+//   //     ROS_DEBUG("spatial optical flow costs: %fms", t_o.toc());
+//        vector<cv::Point2f> ll, rr;
+//        vector<int> idx;
+//        for (unsigned int i = 0; i < r_status.size(); i++)
+//        {
+//            if (!inBorder(trackerData[1].cur_pts[i]))
+//                r_status[i] = 0;
 
-            if (r_status[i])
-            {
-                idx.push_back(i);
+//            if (r_status[i])
+//            {
+//                idx.push_back(i);
 
-                Eigen::Vector3d tmp_p;
-                trackerData[0].m_camera->liftProjective(Eigen::Vector2d(trackerData[0].cur_pts[i].x, trackerData[0].cur_pts[i].y), tmp_p);
-                tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
-                tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
-                ll.push_back(cv::Point2f(tmp_p.x(), tmp_p.y()));
+//                Eigen::Vector3d tmp_p;
+//                trackerData[0].m_camera->liftProjective(Eigen::Vector2d(trackerData[0].cur_pts[i].x, trackerData[0].cur_pts[i].y), tmp_p);
+//                tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
+//                tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
+//                ll.push_back(cv::Point2f(tmp_p.x(), tmp_p.y()));
 
-                trackerData[1].m_camera->liftProjective(Eigen::Vector2d(trackerData[1].cur_pts[i].x, trackerData[1].cur_pts[i].y), tmp_p);
-                tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
-                tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
-                rr.push_back(cv::Point2f(tmp_p.x(), tmp_p.y()));
-            }
-        }
-        if (ll.size() >= 8)
-        {
-            vector<uchar> status;
-            TicToc t_f;
-            cv::findFundamentalMat(ll, rr, cv::FM_RANSAC, 1.0, 0.5, status);
-         //   ROS_DEBUG("find f cost: %f", t_f.toc());
-            int r_cnt = 0;
-            for (unsigned int i = 0; i < status.size(); i++)
-            {
-                if (status[i] == 0)
-                    r_status[idx[i]] = 0;
-                r_cnt += r_status[idx[i]];
-            }
-        }
-    }
+//                trackerData[1].m_camera->liftProjective(Eigen::Vector2d(trackerData[1].cur_pts[i].x, trackerData[1].cur_pts[i].y), tmp_p);
+//                tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
+//                tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
+//                rr.push_back(cv::Point2f(tmp_p.x(), tmp_p.y()));
+//            }
+//        }
+//        if (ll.size() >= 8)
+//        {
+//            vector<uchar> status;
+//            TicToc t_f;
+//            cv::findFundamentalMat(ll, rr, cv::FM_RANSAC, 1.0, 0.5, status);
+//         //   ROS_DEBUG("find f cost: %f", t_f.toc());
+//            int r_cnt = 0;
+//            for (unsigned int i = 0; i < status.size(); i++)
+//            {
+//                if (status[i] == 0)
+//                    r_status[idx[i]] = 0;
+//                r_cnt += r_status[idx[i]];
+//            }
+//        }
+//    }
 
     for (unsigned int i = 0;; i++)
     {
@@ -890,6 +941,7 @@ void img_callback(const cv::Mat &show_img, const ros::Time &timestamp)
                  //   ROS_ASSERT(inBorder(cur_pts[j]));
 		    assert(inBorder(cur_pts[j]));
                 }
+                //cout << cur_pts
             }
             else if (STEREO_TRACK)
             {
@@ -915,7 +967,7 @@ void img_callback(const cv::Mat &show_img, const ros::Time &timestamp)
         feature_points->channels.push_back(id_of_point);
         feature_points->channels.push_back(u_of_point);
         feature_points->channels.push_back(v_of_point);
-        feature_callback(feature_points);          //add
+        feature_callback(feature_points);          //add feature_msg（un_pts）放入feature_buf中
 
 		/*----------------add ui ---------------------*/
         cv::Mat tmp_img = show_img.rowRange(0, ROW);
@@ -956,7 +1008,7 @@ void LoadImages(const string &strImagePath, const string &strTimesStampsPath,
 	}
     }
 }
-/******************* load image end ***********************/
+
 
 /******************* load IMU begin ***********************/
 
@@ -966,7 +1018,7 @@ void LoadImus(ifstream & fImus, const ros::Time &imageTimestamp)
     while(!fImus.eof())
     {
 	string s;
-	getline(fImus,s);
+    getline(fImus,s);//fimus读取一行
 	if(!s.empty())
 	{
 	   char c = s.at(0);
@@ -976,9 +1028,10 @@ void LoadImus(ifstream & fImus, const ros::Time &imageTimestamp)
 	    ss << s;
 	    double tmpd;
 	    int cnt=0;
-	    double data[7];
-	    while(ss >> tmpd)
+        double data[7];
+        while(ss >> tmpd)//ss>>tmpd one data one time
 	    {
+            //cout << tmpd << endl;
 		data[cnt] = tmpd;
 		cnt++;
 		if(cnt ==7)
@@ -998,13 +1051,15 @@ void LoadImus(ifstream & fImus, const ros::Time &imageTimestamp)
 		uint32_t nsec = (data[0]-sec)*1e9;
 		nsec = (nsec/1000)*1000+500;
 	    imudata->header.stamp = ros::Time(sec,nsec);
+        //来一个imu数据，就把它放到buf（queue）里，然后对它（此次测量值）做积分得到位移和姿态
 	    imu_callback(imudata);
+        cout << "imu.time" << data[0] << endl;
 	    if (imudata->header.stamp > imageTimestamp)       //load all imu data produced in interval time between two consecutive frams 
-	      break;
+            break;
 	}
     }
 }
-/******************* load IMU end ***********************/
+
 
 int main(int argc, char **argv)
 {
@@ -1025,14 +1080,15 @@ int main(int argc, char **argv)
     //read parameters section
     readParameters(argv[1]);
     
-    estimator.setParameter();
+    estimator.setParameter();//焦距内外参
     for (int i = 0; i < NUM_OF_CAM; i++)
         trackerData[i].readIntrinsicParameter(CAM_NAMES[i]); //add
-    
+    cout << estimator.g << endl;
 	vector<string> vStrImagesFileNames;
     vector<double> vTimeStamps;
     LoadImages(string(argv[2]),string(argv[3]),vStrImagesFileNames,vTimeStamps);
-    
+    cout << vStrImagesFileNames[0] << endl;
+    cout << vTimeStamps[0] << endl;
     int imageNum = vStrImagesFileNames.size();
     
     if(imageNum<=0)
@@ -1046,6 +1102,10 @@ int main(int argc, char **argv)
      measurement_process.detach();
    
     std::thread loop_detection, pose_graph;
+
+cout << "1" << endl;
+
+cout << (LOOP_CLOSURE) << endl;
     if (LOOP_CLOSURE)
      {     
 	loop_detection = std::thread(process_loop_detection);   

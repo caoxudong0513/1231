@@ -125,8 +125,10 @@ void readParameters(const string & config_file)
         Eigen::Vector3d eigen_T;
         cv::cv2eigen(cv_R, eigen_R);
         cv::cv2eigen(cv_T, eigen_T);
+        //cout << "eigen_R" << eigen_R << endl;
         Eigen::Quaterniond Q(eigen_R);
         eigen_R = Q.normalized();
+        //cout << "eigen_R" << eigen_R << endl;
         RIC.push_back(eigen_R);
         TIC.push_back(eigen_T);
      //   ROS_INFO_STREAM("Extrinsic_R : " << std::endl << RIC[0]);
