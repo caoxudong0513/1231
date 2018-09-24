@@ -228,11 +228,11 @@ void visualization()
 void predict(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     double t = imu_msg->header.stamp.toSec();
-    cout << "t " << t << endl;
-    cout << "latest_time" << latest_time << endl;
+//    cout << "t " << t << endl;
+//    cout << "latest_time" << latest_time << endl;
     double dt = t - latest_time;
     latest_time = t;
-    cout << "dt" << dt << endl;
+//    cout << "dt" << dt << endl;
 
     double dx = imu_msg->linear_acceleration.x;
     double dy = imu_msg->linear_acceleration.y;
@@ -248,39 +248,39 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     //am=R(at+g)+ba+na
     //at=q(am-ba-q.inverse*g)得到真实加速度值（imubody坐标系下）
     //! 这个地方的tmp_Q是local-->world
-    cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
-    cout <<"ba"<< tmp_Ba <<endl;
-    cout <<"acc0" <<acc_0<<endl;
-    cout << "gyr_0"<<gyr_0<<endl;
-    cout << "g"<<estimator.g<< endl;
+//    cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
+//    cout <<"ba"<< tmp_Ba <<endl;
+//    cout <<"acc0" <<acc_0<<endl;
+//    cout << "gyr_0"<<gyr_0<<endl;
+//    cout << "g"<<estimator.g<< endl;
     Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba - tmp_Q.inverse() * estimator.g);
-    cout << "un_acc_0" <<un_acc_0 << endl;
+//    cout << "un_acc_0" <<un_acc_0 << endl;
 
     //*****get required  wt(wt')
     //wm=wt+bw+nw
     //wt'=0.5(wk+w[k+1])-bw（imubody坐标系下）last wm,wm now取平均
-    cout << "bg" <<tmp_Bg << endl;
+//    cout << "bg" <<tmp_Bg << endl;
     Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;
-    cout <<"un_gyr"<< un_gyr<<endl;
+//    cout <<"un_gyr"<< un_gyr<<endl;
 
     //*****updata q
     //q=q*q{wt*dt}
     tmp_Q = tmp_Q * Utility::deltaQ(un_gyr * dt);
-    cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
+    cout <<" tem_q" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
 
     //*****get at now
     Eigen::Vector3d un_acc_1 = tmp_Q * (linear_acceleration - tmp_Ba - tmp_Q.inverse() * estimator.g);
     //cout <<" w" <<tmp_Q.w()<<" x"<<tmp_Q .x()<<" y"<<tmp_Q.y()<<" z"<<tmp_Q.z()<< endl;
-    cout << "un_acc_1" <<un_acc_1 << endl;
+//    cout << "un_acc_1" <<un_acc_1 << endl;
 
     //*****get required  at(at')
     //at'=0.5(atk+atk+1)
     Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-    cout << "un_acc" <<un_acc << endl;
+//    cout << "un_acc" <<un_acc << endl;
 
     //*****get pnow=last p+ v*dt+ 0.5at'(dt*dt)
-    cout << "tmp_P" <<tmp_P << endl;
-    cout << "tmp_V" <<tmp_V << endl;
+//    cout << "tmp_P" <<tmp_P << endl;
+//    cout << "tmp_V" <<tmp_V << endl;
     tmp_P = tmp_P + dt * tmp_V + 0.5 * dt * dt * un_acc;
     cout << "tmp_P" <<tmp_P << endl;
     tmp_V = tmp_V + dt * un_acc;
@@ -319,6 +319,7 @@ getMeasurements()
       
         if (imu_buf.empty() || feature_buf.empty())	   
             return measurements;
+        //imu_buf最后一个数据时间小于feature_buf第一个数据时间,退出等待,等待次数+1
         if (!(imu_buf.back()->header.stamp > feature_buf.front()->header.stamp))
         {
        //     ROS_WARN("wait for imu, only should happen at the beginning");
@@ -327,6 +328,7 @@ getMeasurements()
             return measurements;
         }
 
+         //imu_buf第一个数据时间da于feature_buf第一个数据时间,去掉弹出第一个feature_buf数据
         if (!(imu_buf.front()->header.stamp < feature_buf.front()->header.stamp))
         {
         //    ROS_WARN("throw img, only should happen at the beginning");
@@ -381,10 +383,12 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
     con.notify_one();
 }
 
+//发送IMU数据到预积分环节
 void send_imu(const sensor_msgs::ImuConstPtr &imu_msg)
 {
-    cout << "imu.size" << imu_msg << endl;
+
     double t = imu_msg->header.stamp.toSec();
+     cout << "imu.time" << t << endl;
     if (current_time < 0)
         current_time = t;
     double dt = t - current_time;
@@ -424,7 +428,7 @@ void process_loop_detection()
 
     while(LOOP_CLOSURE)   
     {
-        cout << "process_loop_detection-LOOP_CLOSURE" << LOOP_CLOSURE << endl;
+      //  cout << "process_loop_detection-LOOP_CLOSURE" << LOOP_CLOSURE << endl;
         KeyFrame* cur_kf = NULL; 
         m_keyframe_buf.lock();
         while(!keyframe_buf.empty())
@@ -646,7 +650,7 @@ void process()
     cout << "void process()" << endl;
     while (true) 
     {
-cout << "true" << endl;
+//cout << "true" << endl;
         std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>> measurements;
         std::unique_lock<std::mutex> lk(m_buf);
         con.wait(lk, [&]
@@ -656,13 +660,16 @@ cout << "true" << endl;
                  });
         lk.unlock();
  cout << "measurements.size" << measurements.size()<< endl;
+ unsigned int measurementsimugeshu=0;
         for (auto &measurement : measurements)
         {
             for (auto &imu_msg : measurement.first)
-      //t,dt,ba=bg=000,dx, dy, dz()rx, ry, rz(减去了babg),processIMU(dt, Vector3d(dx, dy, dz()), Vector3d(rx, ry, rz));
-                       //
-                send_imu(imu_msg);
-cout << "send_imu()" <<  imu_buf.size()<< endl;
+      //t,dt,ba=bg=000,,,dx, dy, dz()rx, ry, rz(all减去了babg),预积分processIMU(dt, Vector3d(dx, dy, dz()), Vector3d(rx, ry, rz));
+              {
+                ++measurementsimugeshu;
+               send_imu(imu_msg);
+              }
+cout << "send_imu()" <<  imu_buf.size()<<"measurementsimugeshu" << measurementsimugeshu << endl;
 
             auto img_msg = measurement.second;
       //      ROS_DEBUG("processing vision data with stamp %f \n", img_msg->header.stamp.toSec());
@@ -682,6 +689,7 @@ cout << "send_imu()" <<  imu_buf.size()<< endl;
 		assert(z == 1);
                 image[feature_id].emplace_back(camera_id, Vector3d(x, y, z));
             }
+
             estimator.processImage(image, img_msg->header);
             /**
             *** start build keyframe database for loop closure

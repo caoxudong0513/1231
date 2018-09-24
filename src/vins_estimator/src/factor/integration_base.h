@@ -33,6 +33,7 @@ class IntegrationBase
         dt_buf.push_back(dt);
         acc_buf.push_back(acc);
         gyr_buf.push_back(gyr);
+        cout << "dt_buf,acc_buf,gyr_buf.size"<<dt_buf.size()<< acc_buf.size()<<gyr_buf.size() << endl;
         propagate(dt, acc, gyr);
     }
 
@@ -60,9 +61,12 @@ class IntegrationBase
                             Eigen::Vector3d &result_delta_p, Eigen::Quaterniond &result_delta_q, Eigen::Vector3d &result_delta_v,
                             Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)
     {
-        //ROS_INFO("midpoint integration");
+        cout << "midpoint integration" << endl;
+        cout << "delta_q" <<delta_q.x()<<delta_q.y()<<delta_q.z()<<delta_q.w()<< endl;
         Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
+        cout << "un_acc_0" << un_acc_0 << endl;
         Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
+        cout << "un_gyr" << un_gyr << endl;
         result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
         Vector3d un_acc_1 = result_delta_q * (_acc_1 - linearized_ba);
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
@@ -127,7 +131,7 @@ class IntegrationBase
         }
 
     }
-
+//
     void propagate(double _dt, const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1)
     {
         dt = _dt;
@@ -138,7 +142,7 @@ class IntegrationBase
         Vector3d result_delta_v;
         Vector3d result_linearized_ba;
         Vector3d result_linearized_bg;
-
+//delta_p，delta_q，delta_v代表相对预积分初始参考系的位移，旋转四元数，以及速度（例如，从k帧预积分到k+1帧，则参考系是k帧的imu坐标系）
         midPointIntegration(_dt, acc_0, gyr_0, _acc_1, _gyr_1, delta_p, delta_q, delta_v,
                             linearized_ba, linearized_bg,
                             result_delta_p, result_delta_q, result_delta_v,

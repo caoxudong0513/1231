@@ -101,7 +101,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
     {
         forw_img = img;
     }
-cout << "pts.size" <<forw_pts.size()<< endl;
+//cout << "pts.size" <<forw_pts.size()<< endl;
     forw_pts.clear();
 
     if (cur_pts.size() > 0)
@@ -207,7 +207,7 @@ void FeatureTracker::rejectWithF()
 
 bool FeatureTracker::updateID(unsigned int i)
 {
-    cout << "id.size" << ids.size() << endl;
+   // cout << "id.size" << ids.size() << endl;
     if (i < ids.size())
     {
         if (ids[i] == -1)

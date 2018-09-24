@@ -77,13 +77,19 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         acc_0 = linear_acceleration;
         gyr_0 = angular_velocity;
     }
+cout << "frame_count " << frame_count << endl;
 
+//! 当滑窗不满的时候，把当前测量值加入到滑窗指定位置，所以在这个阶段做预计分的时候相当于是在和自己做预计分
+//cout << "pre_integrations[frame_count]" << pre_integrations[frame_count]->noise<< endl;
     if (!pre_integrations[frame_count])
     {
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
+   // cout << "pre_integrations[frame_count]" << pre_integrations[frame_count]->noise<< endl;
+      //! 进入预计分环节
     if (frame_count != 0)
     {
+        //! 添加IMU数据，进行预积分  Prei-Second
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
             tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
@@ -92,24 +98,33 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         linear_acceleration_buf[frame_count].push_back(linear_acceleration);
         angular_velocity_buf[frame_count].push_back(angular_velocity);
 
-        int j = frame_count;         
+        //! 这个地方又拿IMU的数据做了一次积分, Prei-Third，更新估计器内系统的位姿
+        int j = frame_count;
+        //noise是zero mean Gassu，在这里忽略了
         Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
+        //下面都采用的是中值积分的传播方式，noise被忽略了
         Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
         Rs[j] *= Utility::deltaQ(un_gyr * dt).toRotationMatrix();
         Vector3d un_acc_1 = Rs[j] * (linear_acceleration - Bas[j]) - g;
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
         Vs[j] += dt * un_acc;
+//        cout << Rs[0] << endl;
+//        cout << Ps[0] << endl;
     }
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
-	//std::cout << "acc_0 : " << acc_0 << std::endl;
-	//std::cout << "gyr_0 : " << gyr_0 << std::endl;
+//    std::cout << "acc_0 : " << acc_0 << std::endl;
+//    std::cout << "gyr_0 : " << gyr_0 << std::endl;
 
 }
 
 void Estimator::processImage(const map<int, vector<pair<int, Vector3d>>> &image, const std_msgs::Header &header)
 {
+    double t = header.stamp.toSec() ;
+     cout << "img_msg.time"<< t << endl;
+    cout << "new image coming ------------------------------------------" << endl;
+    cout << "Adding feature points %lu" << image.size() << endl;
    // ROS_DEBUG("new image coming ------------------------------------------");
   //  ROS_DEBUG("Adding feature points %lu", image.size());
     if (f_manager.addFeatureCheckParallax(frame_count, image))
@@ -117,6 +132,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Vector3d>>> &image,
     else
         marginalization_flag = MARGIN_SECOND_NEW;
 
+    cout << "this frame is--------------------%s" << marginalization_flag << endl;//? "reject" : "accept" << endl;
+    cout << "%s" << marginalization_flag << endl;//? "Non-keyframe" : "Keyframe" << endl;
+    cout << "Solving %d" << frame_count <<endl;
+    cout << "number of feature: %d" << f_manager.getFeatureCount()<< endl;
   // ("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
    // ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
    // ROS_DEBUG("Solving %d", frame_count);
